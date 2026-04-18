@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  ibmmq:
+    image: icr.io/ibm-messaging/mq:latest
+    environment:
+      LICENSE: accept
+      MQ_QMGR_NAME: QM1
+      MQ_APP_PASSWORD: passw0rd
+    ports:
+      - "1414:1414"
+      - "9443:9443"
+    healthcheck:
+      test: ["CMD", "dspmq", "-m", "QM1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+
+  producer:
+    build: ./producer
+    environment:
+      MQ_HOST: ibmmq
+      MQ_PORT: "1414"
+      MQ_CHANNEL: DEV.APP.SVRCONN
+      MQ_USER: app
+      MQ_PASSWORD: passw0rd
+      MQ_QUEUE: DEV.QUEUE.1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+    depends_on:
+      ibmmq:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+
+  processor:
+    build: ./processor
+    environment:
+      MQ_HOST: ibmmq
+      MQ_PORT: "1414"
+      MQ_CHANNEL: DEV.APP.SVRCONN
+      MQ_USER: app
+      MQ_PASSWORD: passw0rd
+      MQ_IN_QUEUE: DEV.QUEUE.1
+      MQ_OUT_QUEUE: DEV.QUEUE.2
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    depends_on:
+      ibmmq:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+
+  consumer:
+    build: ./consumer
+    environment:
+      MQ_HOST: ibmmq
+      MQ_PORT: "1414"
+      MQ_CHANNEL: DEV.APP.SVRCONN
+      MQ_USER: app
+      MQ_PASSWORD: passw0rd
+      MQ_QUEUE: DEV.QUEUE.2
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+    depends_on:
+      ibmmq:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
